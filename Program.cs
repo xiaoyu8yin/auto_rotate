@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -82,6 +83,23 @@ internal sealed class TrayContext : ApplicationContext
         }
 
         menu.Items.Add(new ToolStripSeparator());
+        var startupItem = new ToolStripMenuItem("开机自动启动")
+        {
+            Checked = StartupManager.IsEnabled()
+        };
+        startupItem.Click += (_, _) =>
+        {
+            try
+            {
+                StartupManager.SetEnabled(!startupItem.Checked);
+                startupItem.Checked = StartupManager.IsEnabled();
+            }
+            catch (Exception exception)
+            {
+                notifyIcon.ShowBalloonTip(3000, "开机自动启动设置失败", exception.Message, ToolTipIcon.Error);
+            }
+        };
+        menu.Items.Add(startupItem);
         menu.Items.Add("退出", null, (_, _) => ExitThread());
         return menu;
     }
@@ -110,6 +128,36 @@ internal sealed class TrayContext : ApplicationContext
         notifyIcon.Dispose();
         base.ExitThreadCore();
     }
+}
+
+internal static class StartupManager
+{
+    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string AppName = "AutoRotate";
+
+    public static bool IsEnabled()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
+        return key?.GetValue(AppName) is string value
+            && string.Equals(value, GetCommand(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static void SetEnabled(bool enabled)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true)
+            ?? Registry.CurrentUser.CreateSubKey(RunKeyPath);
+
+        if (enabled)
+        {
+            key.SetValue(AppName, GetCommand());
+        }
+        else
+        {
+            key.DeleteValue(AppName, throwOnMissingValue: false);
+        }
+    }
+
+    private static string GetCommand() => $"\"{Application.ExecutablePath}\"";
 }
 
 internal sealed class GlobalHotKeyWindow : NativeWindow, IDisposable
